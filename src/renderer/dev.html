@@ -1,69 +1,103 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="script-src 'self' 'unsafe-inline';"
-    />
-    <title>Mini - Image Optimization Tool</title>
+    <title>Mini</title>
     <style>
       body {
-        font-family: Arial, sans-serif;
-        background-color: #f8f9fa;
-        color: #212529;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
         margin: 0;
-        padding: 0;
+        padding: 20px;
+        background-color: #f6f6f6;
+        color: #333;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
       }
-      .container {
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 2rem;
+
+      h1 {
+        margin-bottom: 10px;
+      }
+
+      p {
+        margin-bottom: 20px;
         text-align: center;
       }
-      h1 {
-        color: #4c6ef5;
-        margin-bottom: 1rem;
+
+      .loading {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #007aff;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20px;
       }
-      p {
-        margin-bottom: 1.5rem;
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
       }
-      .btn {
-        background-color: #4c6ef5;
+
+      button {
+        background-color: #007aff;
         color: white;
         border: none;
-        padding: 0.75rem 1.5rem;
-        border-radius: 4px;
-        font-weight: bold;
+        padding: 8px 16px;
+        border-radius: 6px;
         cursor: pointer;
+        font-size: 14px;
       }
-      .btn:hover {
-        background-color: #3b5bdb;
+
+      button:hover {
+        background-color: #0066cc;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Mini</h1>
-      <p>Image Optimization Tool</p>
-      <p>
-        This is a basic placeholder. You need to run the Vite dev server for the
-        React UI.
-      </p>
-      <button class="btn" id="select-btn">Select Images</button>
-    </div>
+    <h1>Mini</h1>
+    <div class="loading"></div>
+    <p>Connecting to development server...</p>
+    <p>
+      If this page doesn't redirect automatically, the development server might
+      not be running.
+    </p>
+    <button onclick="window.location.reload()">Retry</button>
+
     <script>
-      document
-        .getElementById("select-btn")
-        .addEventListener("click", async () => {
-          try {
-            const images = await window.electronAPI.selectImages();
-            alert(`Selected ${images.length} images`);
-          } catch (error) {
-            alert("Error selecting images");
-          }
-        });
+      // Try to connect to the Vite dev server
+      const MAX_RETRIES = 5;
+      let retries = 0;
+
+      function checkServer() {
+        if (retries >= MAX_RETRIES) {
+          document.querySelector(".loading").style.display = "none";
+          document.querySelector("p").textContent =
+            "Could not connect to the development server. Make sure it's running.";
+          return;
+        }
+
+        const viteServerUrl = "http://localhost:5174";
+
+        fetch(viteServerUrl, { mode: "no-cors" })
+          .then(() => {
+            window.location.href = viteServerUrl;
+          })
+          .catch((error) => {
+            retries++;
+            setTimeout(checkServer, 1000);
+          });
+      }
+
+      checkServer();
     </script>
   </body>
 </html>

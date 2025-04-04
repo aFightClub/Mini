@@ -33,6 +33,10 @@ declare global {
         options: { convertToWebp: boolean, quality: number } 
       }) => Promise<ProcessImageResult>;
       handleDroppedFiles: (filePaths: string[]) => Promise<string[]>;
+      checkForUpdates: () => Promise<boolean>;
+      getAppVersion: () => Promise<string>;
+      onUpdateMessage: (callback: (message: string) => void) => () => void;
+      getUpdateMessages: () => string[];
     }
   }
 }
@@ -48,9 +52,43 @@ const App: React.FC = () => {
   const [processingLog, setProcessingLog] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showDebugLog, setShowDebugLog] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
   const settingsRef = useRef<HTMLDivElement>(null);
   const debugLogRef = useRef<HTMLDivElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Get app version on load
+  useEffect(() => {
+    const getVersion = async () => {
+      try {
+        const version = await window.electronAPI.getAppVersion();
+        setAppVersion(version);
+      } catch (error) {
+        console.error('Error getting app version:', error);
+      }
+    };
+    getVersion();
+    
+    // Set up update message listener
+    const removeUpdateListener = window.electronAPI.onUpdateMessage((message) => {
+      setUpdateMessage(message);
+      addToLog(`Update status: ${message}`);
+    });
+    
+    // Get any existing update messages
+    const updateMessages = window.electronAPI.getUpdateMessages();
+    if (updateMessages.length > 0) {
+      setUpdateMessage(updateMessages[updateMessages.length - 1]);
+      updateMessages.forEach(msg => {
+        addToLog(`Update status: ${msg}`);
+      });
+    }
+    
+    return () => {
+      removeUpdateListener();
+    };
+  }, []);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -261,9 +299,20 @@ const App: React.FC = () => {
     setProcessing(false);
   };
 
-  const clearCompletedImages = () => {
-    setImages(prev => prev.filter(img => img.status !== 'completed'));
-    addToLog('Cleared completed images');
+  const checkForUpdates = async () => {
+    try {
+      const checking = await window.electronAPI.checkForUpdates();
+      if (checking) {
+        addToLog('Checking for updates...');
+        setUpdateMessage('Checking for updates...');
+      } else {
+        addToLog('Update check unavailable in development mode');
+        setUpdateMessage('Updates disabled in development mode');
+      }
+    } catch (error) {
+      console.error('Error checking for updates:', error);
+      addToLog(`Error checking for updates: ${error}`);
+    }
   };
 
   const formatTime = (ms: number): string => {
@@ -284,19 +333,47 @@ const App: React.FC = () => {
   return (
     <div className="app">
       <div className="app-header">
-        <div className="title-area pl-12">
+        <div className="title-area">
           <h1>Mini</h1>
+          {appVersion && <span className="version">v{appVersion}</span>}
         </div>
         <div className="toolbar">
+          <button 
+            className="icon-button update-button"
+            onClick={checkForUpdates}
+            title="Check for Updates"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18">
+              <path d="M12 2C12.717 2 13.372 2.406 13.718 3.078L15.695 7.066L20.142 7.866C20.857 7.996 21.42 8.507 21.617 9.196C21.814 9.886 21.619 10.627 21.115 11.125L18 14.192V18C18 18.753 17.553 19.429 16.867 19.73C16.182 20.032 15.377 19.911 14.813 19.419L12 17L9.187 19.419C8.623 19.911 7.818 20.032 7.133 19.73C6.447 19.429 6 18.753 6 18V14.192L2.885 11.125C2.381 10.627 2.186 9.886 2.383 9.196C2.58 8.507 3.143 7.996 3.858 7.866L8.305 7.066L10.282 3.078C10.628 2.406 11.283 2 12 2Z" fill="currentColor"/>
+            </svg>
+          </button>
           <button 
             className="icon-button log-button"
             onClick={toggleDebugLog}
             title="Show/Hide Debug Log"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="1.3em" height="1.3em" viewBox="0 0 512 512"><path fill="currentColor" fill-rule="evenodd" d="M321.923 42.667H87.256v234.667h42.667v-192h174.293l81.707 81.706v110.294h42.666v-128zM85.573 448V320.028h28.81v105.394h55V448zm153.17-130.23q30.165 0 46.24 19.146q15.444 18.334 15.443 47.143q0 31.519-18.243 50.124q-15.714 16.075-43.44 16.075q-30.165 0-46.24-19.146q-15.443-18.334-15.443-47.866q0-30.887 18.243-49.491q15.804-15.985 43.44-15.985m-.09 22.578q-15.624 0-24.114 13.005q-7.676 11.74-7.676 30.164q0 21.315 9.121 33.055q8.58 11.108 22.759 11.108q15.534 0 24.204-13.095q7.676-11.56 7.676-30.526q0-20.862-9.121-32.603q-8.58-11.108-22.85-11.108m190.83 36.035v65.295q-11.018 3.704-15.534 4.877q-13.998 3.703-30.074 3.703q-31.61 0-48.136-15.895q-18.334-17.52-18.334-48.859q0-36.035 22.759-54.368q16.527-13.365 44.614-13.366q24.024 0 44.705 8.76l-9.844 22.488q-9.754-4.876-17.07-6.819q-7.315-1.941-16.075-1.941q-20.952 0-30.887 13.637q-8.399 11.559-8.399 30.435q0 22.669 12.644 34.138q10.115 9.212 25.107 9.212q8.76 0 16.617-2.98v-25.74H379.54v-22.577z"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18">
+              <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-5-7h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2z" fill="currentColor"/>
+            </svg>
           </button>
         </div>
       </div>
+
+      {updateMessage && (
+        <div className="update-status">
+          <div className="update-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14">
+              <path d="M12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2ZM12 16.5C11.4477 16.5 11 16.9477 11 17.5C11 18.0523 11.4477 18.5 12 18.5C12.5523 18.5 13 18.0523 13 17.5C13 16.9477 12.5523 16.5 12 16.5ZM12 5.5C11.4477 5.5 11 5.94772 11 6.5V13.5C11 14.0523 11.4477 14.5 12 14.5C12.5523 14.5 13 14.0523 13 13.5V6.5C13 5.94772 12.5523 5.5 12 5.5Z" fill="currentColor"/>
+            </svg>
+          </div>
+          <div className="update-text">{updateMessage}</div>
+          <button className="icon-button close-button" onClick={() => setUpdateMessage(null)}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12">
+              <path d="M12 10.586L6.707 5.293a1 1 0 0 0-1.414 1.414L10.586 12l-5.293 5.293a1 1 0 1 0 1.414 1.414L12 13.414l5.293 5.293a1 1 0 0 0 1.414-1.414L13.414 12l5.293-5.293a1 1 0 0 0-1.414-1.414L12 10.586z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      )}
 
       {processingLog.length > 0 && showDebugLog && (
         <div className="debug-log" ref={debugLogRef}>
@@ -328,7 +405,7 @@ const App: React.FC = () => {
             {processing ? (
               <span>Processing: {totalProgress.toFixed(1)}% | Time: {formatTime(elapsedTime)}</span>
             ) : (
-              <span>{images.filter(img => img.status === 'completed').length} of {images.length} completed</span>
+              <span>Ready | {images.filter(img => img.status === 'completed').length} of {images.length} completed</span>
             )}
           </div>
         </div>
@@ -397,7 +474,17 @@ const App: React.FC = () => {
           
           {showSettings && (
             <div className="settings-dropdown">
-             
+              <div className="setting-item">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={convertToWebp}
+                    onChange={e => setConvertToWebp(e.target.checked)}
+                    disabled={processing}
+                  />
+                  Convert to WebP
+                </label>
+              </div>
               
               <div className="setting-item">
                 <label>

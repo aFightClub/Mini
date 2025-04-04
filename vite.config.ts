@@ -4,17 +4,18 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.ELECTRON_ENV === "development" ? "/" : "./",
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    sourcemap: true,
+  },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src/renderer"),
+      "@": path.resolve(__dirname, "./src"),
     },
   },
-  build: {
-    outDir: ".vite/renderer",
-  },
-  root: path.join(__dirname, "src/renderer"),
-  publicDir: path.join(__dirname, "public"),
   server: {
-    port: 5173,
+    port: 5174,
   },
 });

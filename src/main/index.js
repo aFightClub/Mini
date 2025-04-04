@@ -1,15 +1,75 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  protocol,
+  Menu,
+} = require("electron");
 const path = require("path");
 const fs = require("fs");
 const sharp = require("sharp");
 const url = require("url");
+const { autoUpdater } = require("electron-updater");
+const log = require("electron-log");
 
-if (require("electron-squirrel-startup")) {
-  app.quit();
-}
+// Configure logging
+log.transports.file.level = "debug";
+autoUpdater.logger = log;
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 
 // Determine if we're in development or production
-const isDev = process.env.ELECTRON_ENV === "development";
+const isDev = process.env.ELECTRON_ENV === "development" || !app.isPackaged;
+
+// Auto-updater events
+function sendStatusToWindow(text) {
+  log.info(text);
+  if (mainWindow) {
+    mainWindow.webContents.send("update-message", text);
+  }
+}
+
+autoUpdater.on("checking-for-update", () => {
+  sendStatusToWindow("Checking for update...");
+});
+
+autoUpdater.on("update-available", (info) => {
+  sendStatusToWindow("Update available. Downloading...");
+});
+
+autoUpdater.on("update-not-available", (info) => {
+  sendStatusToWindow("Application is up to date.");
+});
+
+autoUpdater.on("error", (err) => {
+  sendStatusToWindow(`Error in auto-updater: ${err.toString()}`);
+});
+
+autoUpdater.on("download-progress", (progressObj) => {
+  sendStatusToWindow(
+    `Download speed: ${progressObj.bytesPerSecond} - Downloaded ${progressObj.percent}% (${progressObj.transferred}/${progressObj.total})`
+  );
+});
+
+autoUpdater.on("update-downloaded", (info) => {
+  sendStatusToWindow("Update downloaded. Will install on quit.");
+
+  // Notify the user that an update is ready
+  dialog
+    .showMessageBox({
+      type: "info",
+      title: "Update Ready",
+      message:
+        "A new version has been downloaded. Restart the application to apply the updates.",
+      buttons: ["Restart", "Later"],
+    })
+    .then((returnValue) => {
+      if (returnValue.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+});
 
 let mainWindow;
 
@@ -28,9 +88,83 @@ const createWindow = () => {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false, // Only for development
+      webSecurity: !isDev, // Only allow web security to be disabled in development
     },
   });
+
+  // Create application menu
+  const template = [
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "Check for Updates",
+          click: () => {
+            autoUpdater.checkForUpdatesAndNotify();
+          },
+        },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "delete" },
+        { type: "separator" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        ...(isDev ? [{ role: "toggleDevTools" }] : []),
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      role: "window",
+      submenu: [{ role: "minimize" }, { role: "close" }],
+    },
+    {
+      role: "help",
+      submenu: [
+        {
+          label: "Learn More",
+          click: async () => {
+            const { shell } = require("electron");
+            await shell.openExternal("https://github.com/aFightClub/Mini");
+          },
+        },
+        {
+          label: "About Mini",
+          click: () => {
+            dialog.showMessageBox({
+              title: "About Mini",
+              message: "Mini - Simple Image Optimizer",
+              detail: `Version: ${app.getVersion()}\n\nA lightweight tool for optimizing images for web use.\n\n© 2024 aFightClub`,
+              type: "info",
+              buttons: ["OK"],
+            });
+          },
+        },
+      ],
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 
   // In development mode, try to use Vite dev server first, then fallback to dev.html
   if (isDev) {
@@ -51,8 +185,8 @@ const createWindow = () => {
 
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, load the built files
-    const indexPath = path.join(__dirname, "../../src/renderer/index.html");
+    // In production, load the built files from the Vite output directory
+    const indexPath = path.join(__dirname, "../../dist/index.html");
     mainWindow.loadFile(indexPath);
     console.log(`Loading from file: ${indexPath}`);
   }
@@ -60,13 +194,48 @@ const createWindow = () => {
 
 // Allow loading local resources
 app.whenReady().then(() => {
-  // Register protocol
-  protocol.registerFileProtocol("file", (request, callback) => {
-    const pathname = decodeURI(request.url.replace("file:///", ""));
-    callback(pathname);
-  });
+  if (!isDev) {
+    // For production builds, set content security policy
+    protocol.registerBufferProtocol("file", (request, callback) => {
+      const filePath = decodeURI(request.url.replace("file:///", ""));
+      try {
+        const data = fs.readFileSync(filePath);
+        const mimeType =
+          {
+            ".html": "text/html",
+            ".js": "text/javascript",
+            ".css": "text/css",
+            ".svg": "image/svg+xml",
+            ".json": "application/json",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".ico": "image/x-icon",
+          }[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+        callback({ mimeType, data });
+      } catch (error) {
+        console.error(error);
+        callback({ error: -2 /* net::FAILED */ });
+      }
+    });
+  } else {
+    // For development, just register the file protocol without CSP
+    protocol.registerFileProtocol("file", (request, callback) => {
+      const pathname = decodeURI(request.url.replace("file:///", ""));
+      callback(pathname);
+    });
+  }
 
   createWindow();
+
+  // Check for updates after app is ready
+  if (!isDev) {
+    setTimeout(() => {
+      autoUpdater.checkForUpdatesAndNotify();
+    }, 3000);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -79,6 +248,19 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+// IPC handler for checking updates manually
+ipcMain.handle("check-for-updates", () => {
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify();
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle("get-app-version", () => {
+  return app.getVersion();
 });
 
 ipcMain.handle("select-images", async () => {
