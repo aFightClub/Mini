@@ -44,7 +44,10 @@ body {
   margin: 0;
   font-size: 16px;
   font-weight: 500;
-  padding-left: 60px;
+}
+
+.title-area {
+  padding-left: 40px;
 }
 
 .toolbar {

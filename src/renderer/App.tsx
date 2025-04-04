@@ -24,6 +24,7 @@ interface FileWithPath extends File {
   path: string;
 }
 
+// Replace the existing window.electronAPI declaration
 declare global {
   interface Window {
     electronAPI: {
@@ -71,7 +72,7 @@ const App: React.FC = () => {
     getVersion();
     
     // Set up update message listener
-    const removeUpdateListener = window.electronAPI.onUpdateMessage((message) => {
+    const removeUpdateListener = window.electronAPI.onUpdateMessage((message: string) => {
       setUpdateMessage(message);
       addToLog(`Update status: ${message}`);
     });
@@ -80,7 +81,7 @@ const App: React.FC = () => {
     const updateMessages = window.electronAPI.getUpdateMessages();
     if (updateMessages.length > 0) {
       setUpdateMessage(updateMessages[updateMessages.length - 1]);
-      updateMessages.forEach(msg => {
+      updateMessages.forEach((msg: string) => {
         addToLog(`Update status: ${msg}`);
       });
     }
@@ -334,8 +335,8 @@ const App: React.FC = () => {
     <div className="app">
       <div className="app-header">
         <div className="title-area">
-          <h1>Mini</h1>
-          {appVersion && <span className="version">v{appVersion}</span>}
+          <h1>Mini {appVersion && <span className="version">v{appVersion}</span>}</h1>
+          
         </div>
         <div className="toolbar">
           <button 

@@ -18,11 +18,26 @@ exports.default = async function notarizing(context) {
 
   console.log("Notarizing macOS application...");
 
-  // Get application information from package.json
-  const { appId, productName } = context.packager.config.appInfo;
-  const appPath = path.join(appOutDir, `${productName}.app`);
+  // Get application information from package.json if not available in context
+  let appId, productName;
 
   try {
+    // Try to get from context first
+    if (
+      context.packager &&
+      context.packager.config &&
+      context.packager.config.appInfo
+    ) {
+      ({ appId, productName } = context.packager.config.appInfo);
+    } else {
+      // Fallback to package.json
+      const packageJson = require("../package.json");
+      appId = packageJson.build.appId;
+      productName = packageJson.build.productName || packageJson.productName;
+    }
+
+    const appPath = path.join(appOutDir, `${productName}.app`);
+
     console.log(`Notarizing ${appId} at ${appPath}`);
 
     await notarize({
@@ -30,7 +45,7 @@ exports.default = async function notarizing(context) {
       appPath,
       teamId: process.env.APPLE_TEAM_ID,
       appleId: process.env.APPLE_ID,
-      appleIdPassword: process.env.APPLE_ID_PASSWORD,
+      appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
     });
 
     console.log(`Successfully notarized ${productName}`);
