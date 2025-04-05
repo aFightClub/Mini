@@ -34,6 +34,7 @@ declare global {
         options: { convertToWebp: boolean, quality: number } 
       }) => Promise<ProcessImageResult>;
       handleDroppedFiles: (filePaths: string[]) => Promise<string[]>;
+      saveDroppedFile: (data: { name: string, type: string, buffer: ArrayBuffer }) => Promise<string>;
       checkForUpdates: () => Promise<boolean>;
       getAppVersion: () => Promise<string>;
       onUpdateMessage: (callback: (message: string) => void) => () => void;
@@ -178,22 +179,69 @@ const App: React.FC = () => {
     const { files } = e.dataTransfer;
     if (files && files.length > 0) {
       try {
-        const filePaths: string[] = [];
+        // For a packaged app, we need to use a different approach
+        // The file paths need to be extracted in a way that works in both dev and production
+        
+        // First, collect all potential file references from the drop event
+        const potentialPaths: string[] = [];
+        
+        // Try to access file.path directly for Electron dev mode
         for (let i = 0; i < files.length; i++) {
-          const file = files[i] as FileWithPath;
+          const file = files[i] as unknown as { path?: string, name: string };
+          // In dev, Electron may provide the path directly
           if (file.path) {
-            filePaths.push(file.path);
+            potentialPaths.push(file.path);
+            addToLog(`Found file path: ${file.path}`);
+          } else {
+            // In packaged app, we might only have the name
+            addToLog(`Found file without path, name: ${file.name}`);
           }
         }
         
-        if (filePaths.length > 0) {
-          const imageFiles = await window.electronAPI.handleDroppedFiles(filePaths);
+        // If we didn't get paths directly, we need to use a different approach for packaged app
+        if (potentialPaths.length === 0) {
+          addToLog('No direct file paths found. Using file buffer transfer approach.');
+          
+          const savedPaths: string[] = [];
+          
+          // Process each file by reading its contents and sending to main process
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const buffer = await file.arrayBuffer();
+            
+            addToLog(`Sending file ${file.name} (${file.type}) to main process, size: ${buffer.byteLength} bytes`);
+            
+            // Save the file in the main process and get back a path
+            const savedPath = await window.electronAPI.saveDroppedFile({
+              name: file.name,
+              type: file.type,
+              buffer
+            });
+            
+            if (savedPath) {
+              addToLog(`File ${file.name} saved as ${savedPath}`);
+              savedPaths.push(savedPath);
+            } else {
+              addToLog(`Failed to save file ${file.name}`);
+            }
+          }
+          
+          // Add any saved paths to the potential paths
+          potentialPaths.push(...savedPaths);
+        }
+        
+        if (potentialPaths.length > 0) {
+          addToLog(`Sending ${potentialPaths.length} file paths to main process for validation`);
+          const imageFiles = await window.electronAPI.handleDroppedFiles(potentialPaths);
+          
           if (imageFiles.length > 0) {
-            addToLog(`Dropped ${imageFiles.length} image files`);
+            addToLog(`Main process found ${imageFiles.length} valid image files`);
             addNewImages(imageFiles);
           } else {
-            addToLog('No valid image files found in the dropped items');
+            addToLog('No valid image files found by main process');
           }
+        } else {
+          addToLog('Could not find any file paths to process');
         }
       } catch (error) {
         console.error('Error handling dropped files:', error);

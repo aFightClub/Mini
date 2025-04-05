@@ -23,4 +23,29 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Handle files dropped into the app
   handleDroppedFiles: (filePaths: string[]) =>
     ipcRenderer.invoke("handle-dropped-files", filePaths) as Promise<string[]>,
+
+  // Handle dropped file with buffer transfer (for packaged app)
+  saveDroppedFile: (data: {
+    name: string;
+    type: string;
+    buffer: ArrayBuffer;
+  }) => ipcRenderer.invoke("save-dropped-file", data) as Promise<string>,
+
+  // Check for updates
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+
+  // Get app version
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+
+  // Update message handling
+  onUpdateMessage: (callback: (message: string) => void) => {
+    const subscription = (_event: any, message: string) => callback(message);
+    ipcRenderer.on("update-message", subscription);
+    return () => {
+      ipcRenderer.removeListener("update-message", subscription);
+    };
+  },
+
+  // Get existing update messages
+  getUpdateMessages: () => ipcRenderer.invoke("get-update-messages"),
 });

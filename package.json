@@ -1,18 +1,20 @@
 {
   "name": "mini",
   "productName": "Mini",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Image minification app for web optimization",
-  "main": "src/main/index.js",
+  "main": "dist/main/index.js",
   "scripts": {
     "start": "electron .",
     "dev:vite": "vite",
-    "dev:electron": "cross-env ELECTRON_ENV=development electron .",
+    "dev:electron": "npm run build:main && cross-env ELECTRON_ENV=development electron .",
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
-    "build": "vite build",
-    "package": "electron-builder --dir",
-    "dist": "vite build && electron-builder",
-    "publish": "vite build && electron-builder --publish always",
+    "build:vite": "vite build",
+    "build:main": "tsc -p tsconfig.main.json && cp src/main/index.js dist/main/index.js",
+    "build": "npm run build:vite && npm run build:main",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "publish": "npm run build && electron-builder --publish always",
     "lint": "eslint . --ext js,jsx,ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "author": "aFightClub",
@@ -56,8 +58,7 @@
     "copyright": "Copyright © 2025 - Wynter.ai",
     "files": [
       "dist/**/*",
-      "src/main/**/*",
-      "src/images/**/*",
+      "!dist/renderer",
       "node_modules/**/*",
       "package.json"
     ],

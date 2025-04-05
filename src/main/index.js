@@ -283,6 +283,41 @@ ipcMain.handle("select-images", async () => {
 
 // Handle file drop events
 ipcMain.handle("handle-dropped-files", async (event, filePaths) => {
+  console.log("Received dropped files:", filePaths);
+
+  // Check for valid paths
+  if (!Array.isArray(filePaths) || filePaths.length === 0) {
+    console.error("Invalid file paths received:", filePaths);
+    return [];
+  }
+
+  // Normalize paths to handle different OS path formats
+  const normalizedPaths = filePaths
+    .map((filePath) => {
+      // Skip blob URLs as they can't be processed in the main process
+      if (filePath.startsWith("blob:")) {
+        console.log(`Skipping blob URL: ${filePath}`);
+        return null;
+      }
+
+      // Convert URL to path if needed (for packaged apps)
+      if (filePath.startsWith("file://")) {
+        try {
+          return url.fileURLToPath(filePath);
+        } catch (err) {
+          console.error(`Error converting file URL: ${err.message}`);
+          return filePath;
+        }
+      }
+      return filePath;
+    })
+    .filter(Boolean); // Remove null values
+
+  if (normalizedPaths.length === 0) {
+    console.error("No valid file paths after normalization");
+    return [];
+  }
+
   // Filter only image files
   const imageExtensions = [
     ".jpg",
@@ -293,11 +328,15 @@ ipcMain.handle("handle-dropped-files", async (event, filePaths) => {
     ".tiff",
     ".avif",
   ];
-  const imageFiles = filePaths.filter((filePath) => {
+
+  const imageFiles = normalizedPaths.filter((filePath) => {
     const ext = path.extname(filePath).toLowerCase();
-    return imageExtensions.includes(ext);
+    const isImage = imageExtensions.includes(ext);
+    console.log(`File: ${filePath}, Extension: ${ext}, Is Image: ${isImage}`);
+    return isImage;
   });
 
+  console.log(`Found ${imageFiles.length} valid image files:`, imageFiles);
   return imageFiles;
 });
 
@@ -392,5 +431,26 @@ ipcMain.handle("process-image", async (event, { filePath, options }) => {
   } catch (error) {
     console.error(`Error processing image: ${error.message}`, error);
     return { success: false, filePath, error: error.message };
+  }
+});
+
+// Handle file data transmitted from the renderer
+ipcMain.handle("save-dropped-file", async (event, { name, type, buffer }) => {
+  try {
+    // Create a temp directory if it doesn't exist
+    const tempDir = path.join(app.getPath("temp"), "mini-app-temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // Save the file to a temporary location
+    const tempFilePath = path.join(tempDir, name);
+    await fs.promises.writeFile(tempFilePath, Buffer.from(buffer));
+
+    console.log(`Saved dropped file to temporary location: ${tempFilePath}`);
+    return tempFilePath;
+  } catch (error) {
+    console.error(`Error saving dropped file: ${error.message}`);
+    return null;
   }
 });
